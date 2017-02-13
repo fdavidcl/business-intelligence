@@ -1,0 +1,100 @@
+---
+title: "Práctica 4"
+author: "David Charte"
+date: "Inteligencia de Negocio - Universidad de Granada"
+output: pdf_document
+---
+
+```{r setup, include=F}
+setwd("~/Documents/IN/p4")
+options(java.parameters = "-Xmx10g")
+library(RWeka)
+library(caret)
+```
+
+```{r machine_data}
+sysinfo = as.list(Sys.info())
+cpuinfo = system(ifelse(sysinfo$sysname == "Darwin",
+                        "sysctl -n machdep.cpu.brand_string",
+                        "lscpu | grep model"),
+                 intern = TRUE)
+meminfo = system(ifelse(sysinfo$sysname == "Darwin",
+                        "system_profiler SPHardwareDataType | grep Memory",
+                        "cat /proc/meminfo | grep MemTotal"),
+                 intern = TRUE
+                 )
+paste(sysinfo$sysname, sysinfo$release, "/", cpuinfo, "/", meminfo)
+```
+
+```{r load, echo=F}
+covertype <- read.arff("covertype.arff")
+kddcup <- read.arff("kddcup99.arff")
+poker = read.arff("pokerhand.arff")
+protein = read.arff("protein.arff")
+```
+
+```{r partition, echo=F}
+makePartitions = function(current, name = substitute(current)) {
+  filename = paste0(name, "_partitions.Rda")
+  
+  if (file.exists(filename)) {
+    load(filename)
+    temp = partitions
+    rm(partitions)
+    return(temp)
+  } else {
+    inTrain = createDataPartition(current$class, p = 0.8, list = FALSE)
+    partitions = list(
+      training = current[inTrain,],
+      test = current[-inTrain,]
+    )
+    partitions$training$fold = createFolds(partitions$training$class, k = 5, list = FALSE)
+    save(partitions, file = filename)
+    return(partitions)
+  }
+}
+
+getFolds = function(set, folds) { set[set$fold %in% folds, names(set) != "fold"] }
+```
+
+## Estudio de escalabilidad
+
+```{r scala}
+scalabilityTest = function(set, classifier, control = Weka_control()) {
+  filename = paste("scala", substitute(set), gsub("/", "-", substitute(classifier)), "classifiers.Rda", sep="_")
+  
+  if (file.exists(filename)) {
+    load(filename)
+    temp = classifiers
+    rm(classifiers)
+    return(temp)
+  } else {
+    partitions = makePartitions(set, substitute(set))
+    
+    classifiers = lapply(1:5, function(i) {
+      cat(paste0("Starting classifier ", i, "...\n"))
+      start = Sys.time()
+      model = make_Weka_classifier(classifier)(class ~ ., data = getFolds(partitions$training, 1:i), control = control)
+      end = Sys.time()
+      list(model = model, time = end - start)
+    })
+    
+    save(classifiers, file = filename)
+    return(classifiers)
+  }
+}
+```
+
+```{r scala_covertype_j48}
+cov_j48 = scalabilityTest(covertype, "weka/classifiers/trees/J48")
+kdd_j48 = scalabilityTest(kddcup, "weka/classifiers/trees/J48")
+pok_j48 = scalabilityTest(poker, "weka/classifiers/trees/J48")
+pro_j48 = scalabilityTest(protein, "weka/classifiers/trees/J48")
+```
+
+```{r scala_covertype_rf}
+cov_rf = scalabilityTest(covertype, "weka/classifiers/trees/RandomForest", Weka_control(I = 50, "num-slots" = 1))
+kdd_rf = scalabilityTest(kddcup, "weka/classifiers/trees/RandomForest", Weka_control(I = 50, "num-slots" = 1))
+pok_rf = scalabilityTest(poker, "weka/classifiers/trees/RandomForest", Weka_control(I = 50, "num-slots" = 1))
+pro_rf = scalabilityTest(protein, "weka/classifiers/trees/RandomForest", Weka_control(I = 50, "num-slots" = 1))
+```
