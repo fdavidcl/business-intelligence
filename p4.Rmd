@@ -7,7 +7,7 @@ output: pdf_document
 
 ```{r setup, include=F}
 setwd("~/Documents/IN/p4")
-options(java.parameters = "-Xmx14g -Xmx14g")
+options(java.parameters = "-Xmx14g")
 library(RWeka)
 library(caret)
 ```
@@ -26,16 +26,16 @@ meminfo = system(ifelse(sysinfo$sysname == "Darwin",
 paste(sysinfo$sysname, sysinfo$release, "/", cpuinfo, "/", meminfo)
 ```
 
-```{r load, echo=F}
-covertype <- read.arff("covertype.arff")
-kddcup <- read.arff("kddcup99.arff")
-poker = read.arff("pokerhand.arff")
-protein = read.arff("protein.arff")
+```{r fakeload, include=F}
+covertype = "covertype"
+kddcup = "kddcup99"
+poker = "pokerhand"
+protein = "protein"
 ```
 
 ```{r partition, echo=F}
 NUM_PARTITIONS = 5
-makePartitions = function(current, name = substitute(current)) {
+makePartitions = function(name) {
   filename = paste0(name, "_partitions.Rda")
   
   if (file.exists(filename)) {
@@ -44,6 +44,7 @@ makePartitions = function(current, name = substitute(current)) {
     rm(partitions)
     return(temp)
   } else {
+    current = read.arff(paste0(name, ".arff"))
     inTrain = createDataPartition(current$class, p = 0.8, list = FALSE)
     partitions = list(
       training = current[inTrain,],
@@ -56,18 +57,16 @@ makePartitions = function(current, name = substitute(current)) {
 }
 
 getFolds = function(set, folds) { set[set$fold %in% folds, names(set) != "fold"] }
-```
 
-## Estudio de escalabilidad
-
-```{r scala}
-scalabilityTest = function(set, classifier, control = Weka_control()) {
+getPredictions = function(set, classifier, control = Weka_control(), stratified = FALSE) {
+  prefix = if (stratified) "strat" else "scala"
   # Get partitions
-  partitions = makePartitions(set, substitute(set))
+  partitions = makePartitions(set)
   
   # Train classifiers
-  filename = paste("scala", substitute(set), gsub("/", "-", substitute(classifier)), "classifiers.Rda", sep="_")
+  filename = paste(prefix, set, gsub("/", "-", classifier), "classifiers.Rda", sep="_")
   cl = if (file.exists(filename)) {
+    cat("Loading saved classifiers for", set)
     load(filename)
     temp = classifiers
     rm(classifiers)
@@ -76,7 +75,9 @@ scalabilityTest = function(set, classifier, control = Weka_control()) {
     classifiers = lapply(1:NUM_PARTITIONS, function(i) {
       cat(paste0("Starting classifier ", i, "...\n"))
       start = Sys.time()
-      model = make_Weka_classifier(classifier)(class ~ ., data = getFolds(partitions$training, 1:i), control = control)
+      model = make_Weka_classifier(classifier)(class ~ .,
+                                               data = getFolds(partitions$training, if (stratified) i else 1:i),
+                                               control = control)
       end = Sys.time()
       list(model = model, time = end - start)
     })
@@ -85,9 +86,10 @@ scalabilityTest = function(set, classifier, control = Weka_control()) {
     classifiers
   }
   
-  # Evaluate predictions
-  filename = paste("scala", substitute(set), gsub("/", "-", substitute(classifier)), "predictions.Rda", sep="_")
+  # Get predictions
+  filename = paste(prefix, set, gsub("/", "-", classifier), "predictions.Rda", sep="_")
   pred = if (file.exists(filename)) {
+    cat("Loading existing predictions for", set)
     load(filename)
     temp = classifiers
     rm(classifiers)
@@ -95,7 +97,7 @@ scalabilityTest = function(set, classifier, control = Weka_control()) {
   } else {
     predictions = lapply(1:NUM_PARTITIONS, function(i) {
       cat(paste0("Predicting with classifier ", i, "...\n"))
-      predict(cl[[i]]$model, partitions$test)
+      predict(cl[[i]]$model, newdata = partitions$test, type = "probability")
     })
     
     save(predictions, file = filename)
@@ -106,16 +108,39 @@ scalabilityTest = function(set, classifier, control = Weka_control()) {
 }
 ```
 
-```{r scala_covertype_j48}
+## Estudio de escalabilidad
+
+```{r scala}
+scalabilityTest = function(set, classifier, control = Weka_control()) {
+  getPredictions(set, classifier, control, stratified = FALSE)
+}
+```
+
+```{r scalability}
 cov_j48 = scalabilityTest(covertype, "weka/classifiers/trees/J48")
 kdd_j48 = scalabilityTest(kddcup, "weka/classifiers/trees/J48")
 pok_j48 = scalabilityTest(poker, "weka/classifiers/trees/J48")
 pro_j48 = scalabilityTest(protein, "weka/classifiers/trees/J48")
-```
-
-```{r scala_covertype_rf}
 cov_rf = scalabilityTest(covertype, "weka/classifiers/trees/RandomForest", Weka_control(I = 50, "num-slots" = 1))
 kdd_rf = scalabilityTest(kddcup, "weka/classifiers/trees/RandomForest", Weka_control(I = 50, "num-slots" = 1))
 pok_rf = scalabilityTest(poker, "weka/classifiers/trees/RandomForest", Weka_control(I = 50, "num-slots" = 1))
+# => java.lang.OutOfMemoryError: GC overhead limit exceeded
 pro_rf = scalabilityTest(protein, "weka/classifiers/trees/RandomForest", Weka_control(I = 50, "num-slots" = 1))
+```
+
+```{r stratified_test}
+stratifiedTest = function(set, classifier, control = Weka_control()) {
+  pred = getPredictions(set, classifier, control, stratified = TRUE)
+}
+```
+
+```{r stratified}
+scov_j48 = stratifiedTest(covertype, "weka/classifiers/trees/J48")
+skdd_j48 = stratifiedTest(kddcup, "weka/classifiers/trees/J48")
+spok_j48 = stratifiedTest(poker, "weka/classifiers/trees/J48")
+spro_j48 = stratifiedTest(protein, "weka/classifiers/trees/J48")
+scov_rf = stratifiedTest(covertype, "weka/classifiers/trees/RandomForest", Weka_control(I = 50, "num-slots" = 1))
+skdd_rf = stratifiedTest(kddcup, "weka/classifiers/trees/RandomForest", Weka_control(I = 50, "num-slots" = 1))
+spok_rf = stratifiedTest(poker, "weka/classifiers/trees/RandomForest", Weka_control(I = 50, "num-slots" = 1))
+spro_rf = stratifiedTest(protein, "weka/classifiers/trees/RandomForest", Weka_control(I = 50, "num-slots" = 1))
 ```
