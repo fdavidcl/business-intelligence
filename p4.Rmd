@@ -7,7 +7,7 @@ output: pdf_document
 
 ```{r setup, include=F}
 setwd("~/Documents/IN/p4")
-options(java.parameters = "-Xmx10g")
+options(java.parameters = "-Xmx14g -Xmx14g")
 library(RWeka)
 library(caret)
 ```
