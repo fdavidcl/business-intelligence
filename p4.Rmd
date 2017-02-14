@@ -34,6 +34,7 @@ protein = read.arff("protein.arff")
 ```
 
 ```{r partition, echo=F}
+NUM_PARTITIONS = 5
 makePartitions = function(current, name = substitute(current)) {
   filename = paste0(name, "_partitions.Rda")
   
@@ -48,7 +49,7 @@ makePartitions = function(current, name = substitute(current)) {
       training = current[inTrain,],
       test = current[-inTrain,]
     )
-    partitions$training$fold = createFolds(partitions$training$class, k = 5, list = FALSE)
+    partitions$training$fold = createFolds(partitions$training$class, k = NUM_PARTITIONS, list = FALSE)
     save(partitions, file = filename)
     return(partitions)
   }
@@ -61,17 +62,18 @@ getFolds = function(set, folds) { set[set$fold %in% folds, names(set) != "fold"]
 
 ```{r scala}
 scalabilityTest = function(set, classifier, control = Weka_control()) {
-  filename = paste("scala", substitute(set), gsub("/", "-", substitute(classifier)), "classifiers.Rda", sep="_")
+  # Get partitions
+  partitions = makePartitions(set, substitute(set))
   
-  if (file.exists(filename)) {
+  # Train classifiers
+  filename = paste("scala", substitute(set), gsub("/", "-", substitute(classifier)), "classifiers.Rda", sep="_")
+  cl = if (file.exists(filename)) {
     load(filename)
     temp = classifiers
     rm(classifiers)
-    return(temp)
+    temp
   } else {
-    partitions = makePartitions(set, substitute(set))
-    
-    classifiers = lapply(1:5, function(i) {
+    classifiers = lapply(1:NUM_PARTITIONS, function(i) {
       cat(paste0("Starting classifier ", i, "...\n"))
       start = Sys.time()
       model = make_Weka_classifier(classifier)(class ~ ., data = getFolds(partitions$training, 1:i), control = control)
@@ -80,8 +82,27 @@ scalabilityTest = function(set, classifier, control = Weka_control()) {
     })
     
     save(classifiers, file = filename)
-    return(classifiers)
+    classifiers
   }
+  
+  # Evaluate predictions
+  filename = paste("scala", substitute(set), gsub("/", "-", substitute(classifier)), "predictions.Rda", sep="_")
+  pred = if (file.exists(filename)) {
+    load(filename)
+    temp = classifiers
+    rm(classifiers)
+    temp
+  } else {
+    predictions = lapply(1:NUM_PARTITIONS, function(i) {
+      cat(paste0("Predicting with classifier ", i, "...\n"))
+      predict(cl[[i]]$model, partitions$test)
+    })
+    
+    save(predictions, file = filename)
+    predictions
+  }
+  
+  lapply(1:NUM_PARTITIONS, function(i) list(model = cl[[i]]$model, time = cl[[i]]$time, predictions = pred[[i]]))
 }
 ```
 
