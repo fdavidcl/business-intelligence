@@ -7,7 +7,7 @@ output: pdf_document
 
 ```{r setup, include=F}
 setwd("~/Documents/IN/p4")
-options(java.parameters = "-Xmx14g")
+options(java.parameters = "-Xmx16g")
 library(RWeka)
 library(caret)
 ```
@@ -91,8 +91,8 @@ getPredictions = function(set, classifier, control = Weka_control(), stratified 
   pred = if (file.exists(filename)) {
     cat("Loading existing predictions for", set)
     load(filename)
-    temp = classifiers
-    rm(classifiers)
+    temp = predictions
+    rm(predictions)
     temp
   } else {
     predictions = lapply(1:NUM_PARTITIONS, function(i) {
@@ -124,7 +124,6 @@ pro_j48 = scalabilityTest(protein, "weka/classifiers/trees/J48")
 cov_rf = scalabilityTest(covertype, "weka/classifiers/trees/RandomForest", Weka_control(I = 50, "num-slots" = 1))
 kdd_rf = scalabilityTest(kddcup, "weka/classifiers/trees/RandomForest", Weka_control(I = 50, "num-slots" = 1))
 pok_rf = scalabilityTest(poker, "weka/classifiers/trees/RandomForest", Weka_control(I = 50, "num-slots" = 1))
-# => java.lang.OutOfMemoryError: GC overhead limit exceeded
 pro_rf = scalabilityTest(protein, "weka/classifiers/trees/RandomForest", Weka_control(I = 50, "num-slots" = 1))
 ```
 
