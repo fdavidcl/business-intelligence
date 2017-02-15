@@ -131,6 +131,10 @@ pro_rf = scalabilityTest(protein, "weka/classifiers/trees/RandomForest", Weka_co
 ```{r stratified_test}
 stratifiedTest = function(set, classifier, control = Weka_control()) {
   pred = getPredictions(set, classifier, control, stratified = TRUE)
+  
+  simpleVote <- function() {}
+    
+  
 }
 ```
 
