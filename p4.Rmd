@@ -5,7 +5,7 @@ date: "Inteligencia de Negocio - Universidad de Granada"
 output: pdf_document
 ---
 
-```{r setup, include=F}
+```{r setup}
 setwd("~/Documents/IN/p4")
 options(java.parameters = "-Xmx16g")
 library(RWeka)
@@ -131,9 +131,12 @@ pro_rf = scalabilityTest(protein, "weka/classifiers/trees/RandomForest", Weka_co
 stratifiedTest = function(set, classifier, control = Weka_control()) {
   pred = getPredictions(set, classifier, control, stratified = TRUE)
   
-  simpleVote <- function() {}
+  simpleVote = (function() {})()
     
-  
+  weightedVote = (function() {
+    sums = as.data.frame(t(Reduce(function(x, i) x + pred[[i]]$predictions, 1:NUM_PARTITIONS, 0)))
+    sapply(sums, which.max)
+  })()
 }
 ```
 
